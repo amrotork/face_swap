@@ -31,7 +31,7 @@ option(WITH_QT "Qt" ON)
 
 # Build components
 # ===================================================
-option(BUILD_DOCS "Build documentation using Doxygen" ON)
+option(BUILD_DOCS "Build documentation using Doxygen" OFF)
 
 # Find dependencies
 # ===================================================
@@ -49,7 +49,8 @@ endif()
 find_package(Boost REQUIRED filesystem program_options regex timer)
 
 # OpenCV
-find_package(OpenCV REQUIRED highgui imgproc imgcodecs calib3d photo)
+#find_package(OpenCV REQUIRED highgui imgproc imgcodecs calib3d photo)
+find_package(OpenCV REQUIRED imgproc imgcodecs calib3d photo)
 
 # sfl
 find_package(find_face_landmarks REQUIRED)
