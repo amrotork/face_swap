@@ -35,7 +35,7 @@ namespace face_swap
         FaceSwap(const std::string& landmarks_path, const std::string& model_3dmm_h5_path,
             const std::string& model_3dmm_dat_path, const std::string& reg_model_path,
             const std::string& reg_deploy_path, const std::string& reg_mean_path,
-            bool generic = false, bool with_expr = true, bool with_gpu = true, 
+            int lips_threshold = 100, bool generic = false, bool with_expr = true, bool with_gpu = true, 
 			int gpu_device_id = 0);
 
 		/**	Set segmentation model.
@@ -163,6 +163,7 @@ namespace face_swap
 
 		bool m_with_gpu;
 		int m_gpu_device_id;
+		int m_lips_threshold;
 
         Mesh m_src_mesh, m_dst_mesh;
         cv::Mat m_vecR, m_vecT, m_K;
@@ -175,6 +176,7 @@ namespace face_swap
         cv::Mat m_source_img;
         cv::Mat m_src_cropped_img, m_src_cropped_seg;
         cv::Mat m_tgt_rendered_img;
+		cv::Mat m_blend_mask_img;
         std::vector<cv::Point> m_src_cropped_landmarks;
         std::vector<cv::Point> m_tgt_cropped_landmarks;
         cv::Mat m_src_vecR, m_src_vecT, m_src_K;
@@ -191,7 +193,10 @@ namespace face_swap
             const cv::Mat& vecR, const cv::Mat& vecT, const cv::Mat& K);
         cv::Mat debugSourceLandmarks();
         cv::Mat debugTargetLandmarks();
+		cv::Mat debugSourceCropped();
+		cv::Mat debugTargetCropped();
         cv::Mat debugRender();
+		cv::Mat debugBlendMask();
         /////////////
     };
 }   // namespace face_swap
