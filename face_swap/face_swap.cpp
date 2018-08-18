@@ -14,9 +14,10 @@ namespace face_swap
     FaceSwap::FaceSwap(const std::string& landmarks_path, const std::string& model_3dmm_h5_path,
         const std::string& model_3dmm_dat_path, const std::string& reg_model_path,
         const std::string& reg_deploy_path, const std::string& reg_mean_path,
-        bool generic, bool with_expr, bool with_gpu, int gpu_device_id) :
+        int lips_threshold, bool generic, bool with_expr, bool with_gpu, int gpu_device_id) :
 		m_with_gpu(with_gpu),
-		m_gpu_device_id(gpu_device_id)
+		m_gpu_device_id(gpu_device_id),
+        m_lips_threshold(lips_threshold)
     {
         // Initialize Sequence Face Landmarks
         m_sfl = sfl::SequenceFaceLandmarks::create(landmarks_path);
@@ -104,6 +105,7 @@ namespace face_swap
         if (!preprocessImages(img, seg, m_tgt_landmarks, cropped_landmarks,
             cropped_img, cropped_seg, m_target_bbox))
             return false;
+
 
 		// If segmentation was not specified and we have a segmentation model then
 		// calculate the segmentation
@@ -217,7 +219,7 @@ namespace face_swap
 		// If source segmentation was not specified and we have a segmentation model then
 		// calculate the segmentation
 		if (cropped_src_seg.empty() && m_face_seg != nullptr)
-			cropped_src_seg = m_face_seg->process(cropped_src);
+            cropped_src_seg = m_face_seg->process(cropped_src);
 
 		// If target segmentation was not specified and we have a segmentation model then
 		// calculate the segmentation
@@ -415,6 +417,37 @@ namespace face_swap
         if (!dst_seg.empty())
             cv::bitwise_and(mask, dst_seg, mask);
 
+        std::vector<std::vector<cv::Point>> contours;
+		cv::findContours(mask, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+		cv::drawContours(mask, contours, 0, cv::Scalar(255), -1);     //draw with filling
+
+        // cv::Mat new_mask = cv::Mat::zeros(src.rows + 2, src.cols + 2, CV_8U);
+        // cv::floodFill(mask, new_mask, cv::Point(0,0), 255, 0, cv::Scalar(), cv::Scalar(), 4 + (255 << 8) + cv::FLOODFILL_MASK_ONLY);
+        // new_mask(cv::Range(1, mask.rows - 1), cv::Range(1, mask.cols-1)).copyTo(mask);
+
+        
+        // cv::bitwise_not(result, result_inv);
+
+        // cv::Mat result = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
+        // std::vector<std::vector<cv::Point>> contours;
+        // std::vector<cv::Vec4i> hierarchy;
+        // cv::findContours( mask, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE );
+
+        // // iterate through all the top-level contours,
+        // int idx = 0;
+        // for( ; idx >= 0; idx = hierarchy[idx][1] )
+        // {
+        //     cv::Scalar color( rand()&255, rand()&255, rand()&255);
+        //     cv::drawContours(result, contours, idx, color, CV_FILLED, 8, hierarchy);
+        // }
+        
+        // cv::Mat new_mask;
+
+        // cv::bitwise_and(result_inv, dst_seg, new_mask);
+        //mask = result;
+        m_blend_mask_img = mask;
+
+
         // Find center point
         int minc = std::numeric_limits<int>::max(), minr = std::numeric_limits<int>::max();
         int maxc = 0, maxr = 0;
@@ -432,17 +465,46 @@ namespace face_swap
         cv::Point center((minc + maxc) / 2, (minr + maxr) / 2);
 
         /// Debug ///
-        //cv::Mat out = src.clone();
-        //cv::rectangle(out, cv::Point(minc, minr), cv::Point(maxc, maxr), cv::Scalar(255, 0, 0));
-        //cv::imshow("target", out);
-        //cv::imshow("mask", mask);
-        //cv::waitKey(0);
+        // cv::Mat out = src.clone();
+        // cv::rectangle(out, cv::Point(minc, minr), cv::Point(maxc, maxr), cv::Scalar(255, 0, 0));
+        // cv::imwrite("target_with_points.jpg", out);
+        // cv::imwrite("last_mask.jpg", mask);
+        // cv::waitKey(0);
         /////////////
 
         // Do blending
         cv::Mat blend;
         cv::seamlessClone(src, dst, mask, center, blend, cv::NORMAL_CLONE);
 
+
+        // Fix mouth problem
+        // Detect new landmarks for output.
+        m_sfl->clear();
+        const sfl::Frame& lmsFrame = m_sfl->addFrame(blend);
+        std::cout << "faces found = " << lmsFrame.faces.size() << std::endl;    // Debug
+        const sfl::Face* face = lmsFrame.getFace(sfl::getMainFaceID(m_sfl->getSequence()));
+        std::vector<cv::Point> final_landmarks = face->landmarks;
+
+        std::vector<cv::Point>::const_iterator first = final_landmarks.begin() + 48;
+        std::vector<cv::Point>::const_iterator last = final_landmarks.begin() + 59;
+        std::vector<cv::Point> mouth_landmarks(first, last);
+
+        // std::cout << final_landmarks << std::endl;
+        
+        // // Create mouth mask
+        cv::Mat mouth_mask = cv::Mat::zeros(blend.rows, blend.cols, blend.depth());
+        cv::fillConvexPoly(mouth_mask, &mouth_landmarks[0], mouth_landmarks.size(), cv::Scalar(255,255,255));
+
+        cv::Mat gray;
+        cv::Mat threshold_frame;
+        
+        cv::cvtColor(blend, gray, CV_BGR2GRAY); //perform gray scale conversion.
+        cv::threshold(gray, threshold_frame, m_lips_threshold,255, cv::THRESH_BINARY_INV);
+        
+        cv::bitwise_and(mouth_mask, threshold_frame, mouth_mask);
+        cv::inpaint(blend,mouth_mask,blend,2,cv::INPAINT_NS);
+
+        m_blend_mask_img = mouth_mask;
         return blend;
     }
 
@@ -590,18 +652,36 @@ namespace face_swap
     {
         cv::Mat out = m_tgt_rendered_img.clone();
 
-        // Overwrite black pixels with original pixels
-        cv::Vec3b* out_data = (cv::Vec3b*)out.data;
-        for (int i = 0; i < out.total(); ++i)
-        {
-            unsigned char b = (*out_data)[0];
-            unsigned char g = (*out_data)[1];
-            unsigned char r = (*out_data)[2];
-            if (b == 0 && g == 0 && r == 0)
-                *out_data = m_target_img.at<cv::Vec3b>(i);
-            ++out_data;
-        }
+        // // Overwrite black pixels with original pixels
+        // cv::Vec3b* out_data = (cv::Vec3b*)out.data;
+        // for (int i = 0; i < out.total(); ++i)
+        // {
+        //     unsigned char b = (*out_data)[0];
+        //     unsigned char g = (*out_data)[1];
+        //     unsigned char r = (*out_data)[2];
+        //     if (b == 0 && g == 0 && r == 0)
+        //         *out_data = m_target_img.at<cv::Vec3b>(i);
+        //     ++out_data;
+        // }
 
+        return out;
+    }
+
+    cv::Mat FaceSwap::debugSourceCropped()
+    {
+        cv::Mat out = m_src_cropped_img.clone();
+        return out;
+    }
+
+    cv::Mat FaceSwap::debugTargetCropped()
+    {
+        cv::Mat out = m_tgt_cropped_img.clone();
+        return out;
+    }
+
+    cv::Mat FaceSwap::debugBlendMask()
+    {
+        cv::Mat out = m_blend_mask_img.clone();
         return out;
     }
 
