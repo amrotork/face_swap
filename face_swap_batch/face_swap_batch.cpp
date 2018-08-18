@@ -110,11 +110,14 @@ int main(int argc, char* argv[])
     string log_path, cfg_path;
     bool generic, with_expr, with_gpu;
     unsigned int gpu_device_id, verbose;
+    unsigned int lips_threshold;
+
 	try {
 		options_description desc("Allowed options");
 		desc.add_options()
 			("help,h", "display the help message")
             ("verbose,v", value<unsigned int>(&verbose)->default_value(0), "output debug information [0, 4]")
+            ("lips_threshold,l", value<unsigned int>(&lips_threshold)->default_value(40), "Threshold for Lips [0, 4]")
 			("input,i", value<string>(&input_path)->required(), "path to input directory or image pairs list")
 			("output,o", value<string>(&output_path)->required(), "output directory")
             ("segmentations,s", value<string>(&seg_path)->default_value(""), "segmentations directory")
@@ -218,8 +221,10 @@ int main(int argc, char* argv[])
         else readImagePairsFromFile(input_path, img_pairs);
 
         // Initialize face swap
+        std::cout << "Lips threshold " << lips_threshold << endl;
+
 		face_swap::FaceSwap fs(landmarks_path, model_3dmm_h5_path, model_3dmm_dat_path,
-            reg_model_path, reg_deploy_path, reg_mean_path, generic, with_expr,
+            reg_model_path, reg_deploy_path, reg_mean_path, lips_threshold, generic, with_expr,
 			with_gpu, (int)gpu_device_id);
 		if (!(seg_model_path.empty() || seg_deploy_path.empty()))
 			fs.setSegmentationModel(seg_model_path, seg_deploy_path);
@@ -380,6 +385,29 @@ int main(int argc, char* argv[])
 				cv::Mat debug_tgt_mesh_wire_img = fs.debugTargetMeshWireframe();
 				cv::imwrite(debug_tgt_mesh_wire_path, debug_tgt_mesh_wire_img);
 			}
+
+            if (verbose > 4)
+            {
+                // Write cropped images
+                string debug_src_cropped_path = (path(output_path) /=
+					(path(curr_output_path).stem() += "_src_cropped.jpg")).string();
+                cv::Mat debug_src_cropped = fs.debugSourceCropped();
+                cv::imwrite(debug_src_cropped_path, debug_src_cropped);
+
+                string debug_tgt_cropped_path = (path(output_path) /=
+					(path(curr_output_path).stem() += "_tgt_cropped.jpg")).string();
+                cv::Mat debug_tgt_cropped = fs.debugTargetCropped();
+                cv::imwrite(debug_tgt_cropped_path, debug_tgt_cropped);
+            }
+
+            if (verbose > 4)
+            {
+                // Write blend mask for debug
+                string debug_blend_mask_path = (path(output_path) /=
+					(path(curr_output_path).stem() += "_blend_mask.jpg")).string();
+                cv::Mat debug_blend_mask = fs.debugBlendMask();
+                cv::imwrite(debug_blend_mask_path, debug_blend_mask);
+            }
         }
 	}
 	catch (std::exception& e)

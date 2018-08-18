@@ -45,12 +45,13 @@ int main(int argc, char* argv[])
 	string seg_model_path, seg_deploy_path;
     string cfg_path;
     bool generic, with_expr, with_gpu;
-    unsigned int gpu_device_id, verbose;
+    unsigned int gpu_device_id, verbose, lips_threshold;
 	try {
 		options_description desc("Allowed options");
 		desc.add_options()
 			("help,h", "display the help message")
             ("verbose,v", value<unsigned int>(&verbose)->default_value(0), "output debug information [0, 4]")
+			("lips_threshold,l", value<unsigned int>(&lips_threshold)->default_value(40), "Threshold for Lips [0, 4]")
 			("input,i", value<std::vector<string>>(&input_paths)->required(), "image paths [source target]")
 			("output,o", value<string>(&output_path)->required(), "output path")
             ("segmentations,s", value<std::vector<string>>(&seg_paths), "segmentation paths [source target]")
@@ -140,7 +141,7 @@ int main(int argc, char* argv[])
 
         // Initialize face swap
         face_swap::FaceSwap fs(landmarks_path, model_3dmm_h5_path, model_3dmm_dat_path,
-            reg_model_path, reg_deploy_path, reg_mean_path, generic, with_expr,
+            reg_model_path, reg_deploy_path, reg_mean_path, lips_threshold, generic, with_expr,
 			with_gpu, (int)gpu_device_id);
 
         // Read source and target images
